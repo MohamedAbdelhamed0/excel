@@ -89,7 +89,7 @@ class TableAnalyzerMobileLayout extends ConsumerWidget {
             return Column(
               children: [
                 Expanded(
-                  child: DataTableView(tableState: state),
+                  child: DataTableView(workspaceState: state),
                 ),
               ],
             );
@@ -138,7 +138,7 @@ class TableAnalyzerMobileLayout extends ConsumerWidget {
             heroTag: 'ai_sheet_fab',
             onPressed: () {
               if (asyncData.value != null) {
-                _showAiBottomSheet(context, asyncData.value!);
+                _showAiBottomSheet(context, asyncData.value!.activeTableState);
               }
             },
             tooltip: 'AI Insights',

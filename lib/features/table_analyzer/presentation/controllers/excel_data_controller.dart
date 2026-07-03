@@ -5,7 +5,7 @@ import '../../../../core/DI/platform_providers.dart';
 import '../../../../core/utils/excel_parser.dart';
 import '../../../recent_files/presentation/controllers/recent_files_controller.dart';
 
-/// State object representing table data, current sorting, search query, and pagination.
+/// State object representing table data, current sorting, search query, and pagination for a single spreadsheet.
 class TableDataState {
   final List<List<dynamic>> rawData;
   final List<List<dynamic>> processedData; // Filtered and sorted rows
@@ -59,18 +59,122 @@ class TableDataState {
   }
 }
 
-/// Riverpod AsyncNotifier managing background file parsing, sorting, filtering, and pagination.
-class ExcelDataNotifier extends AsyncNotifier<TableDataState> {
+/// Data structure representing a single open spreadsheet tab.
+class OpenFileTab {
+  final String id;
+  final String fileName;
+  final String? filePath;
+  final TableDataState tableState;
+
+  const OpenFileTab({
+    required this.id,
+    required this.fileName,
+    this.filePath,
+    required this.tableState,
+  });
+
+  OpenFileTab copyWith({
+    String? id,
+    String? fileName,
+    String? filePath,
+    TableDataState? tableState,
+  }) {
+    return OpenFileTab(
+      id: id ?? this.id,
+      fileName: fileName ?? this.fileName,
+      filePath: filePath ?? this.filePath,
+      tableState: tableState ?? this.tableState,
+    );
+  }
+}
+
+/// Workspace state holding all open tabs and the index of the currently active tab.
+class MultiTabWorkspaceState {
+  final List<OpenFileTab> tabs;
+  final int activeTabIndex;
+
+  const MultiTabWorkspaceState({
+    required this.tabs,
+    required this.activeTabIndex,
+  });
+
+  OpenFileTab? get activeTab =>
+      (tabs.isNotEmpty && activeTabIndex >= 0 && activeTabIndex < tabs.length)
+          ? tabs[activeTabIndex]
+          : null;
+
+  TableDataState get activeTableState =>
+      activeTab?.tableState ?? const TableDataState(rawData: [], processedData: []);
+
+  MultiTabWorkspaceState copyWith({
+    List<OpenFileTab>? tabs,
+    int? activeTabIndex,
+  }) {
+    return MultiTabWorkspaceState(
+      tabs: tabs ?? this.tabs,
+      activeTabIndex: activeTabIndex ?? this.activeTabIndex,
+    );
+  }
+}
+
+/// Riverpod AsyncNotifier managing the multi-tab workspace state.
+class ExcelDataNotifier extends AsyncNotifier<MultiTabWorkspaceState> {
   @override
-  FutureOr<TableDataState> build() async {
+  FutureOr<MultiTabWorkspaceState> build() async {
     final sample = ExcelParser.generateSampleData();
-    return TableDataState(
-      rawData: sample,
-      processedData: sample,
+    final defaultTab = OpenFileTab(
+      id: 'sample_default',
+      fileName: 'Sample Dataset.xlsx',
+      tableState: TableDataState(
+        rawData: sample,
+        processedData: sample,
+      ),
+    );
+
+    return MultiTabWorkspaceState(
+      tabs: [defaultTab],
+      activeTabIndex: 0,
     );
   }
 
-  /// Prompts file picker, offloads parsing to a background isolate, and saves to the local database.
+  /// Switch active tab index.
+  void setActiveTab(int index) {
+    final currentState = state.value;
+    if (currentState == null || index < 0 || index >= currentState.tabs.length) return;
+    state = AsyncValue.data(currentState.copyWith(activeTabIndex: index));
+  }
+
+  /// Close tab at given index.
+  void closeTab(int index) {
+    final currentState = state.value;
+    if (currentState == null || index < 0 || index >= currentState.tabs.length) return;
+
+    final newTabs = List<OpenFileTab>.from(currentState.tabs)..removeAt(index);
+
+    if (newTabs.isEmpty) {
+      // If all tabs closed, recreate default sample tab
+      final sample = ExcelParser.generateSampleData();
+      final defaultTab = OpenFileTab(
+        id: 'sample_default',
+        fileName: 'Sample Dataset.xlsx',
+        tableState: TableDataState(
+          rawData: sample,
+          processedData: sample,
+        ),
+      );
+      state = AsyncValue.data(MultiTabWorkspaceState(tabs: [defaultTab], activeTabIndex: 0));
+      return;
+    }
+
+    int newIndex = currentState.activeTabIndex;
+    if (index <= currentState.activeTabIndex) {
+      newIndex = (currentState.activeTabIndex - 1).clamp(0, newTabs.length - 1);
+    }
+
+    state = AsyncValue.data(MultiTabWorkspaceState(tabs: newTabs, activeTabIndex: newIndex));
+  }
+
+  /// Prompts file picker, offloads parsing to a background isolate, adds/switches to a tab, and saves to local DB.
   Future<void> pickAndLoadFile() async {
     final previousState = state.value;
     state = const AsyncValue.loading();
@@ -81,10 +185,21 @@ class ExcelDataNotifier extends AsyncNotifier<TableDataState> {
       final fileInfo = await picker.pickFileDetails(allowedExtensions: ['csv', 'xlsx', 'xls']);
 
       if (fileInfo != null && fileInfo.bytes.isNotEmpty) {
-        // Parse in a background isolate using compute
+        // Check if file is already open in an existing tab
+        if (previousState != null) {
+          final existingIdx = previousState.tabs.indexWhere(
+            (tab) =>
+                (fileInfo.path != null && tab.filePath == fileInfo.path) ||
+                tab.fileName == fileInfo.name,
+          );
+          if (existingIdx != -1) {
+            return previousState.copyWith(activeTabIndex: existingIdx);
+          }
+        }
+
+        // Parse bytes in background isolate using compute
         final parsedData = await compute(ExcelParser.parseBytes, fileInfo.bytes);
         if (parsedData.isNotEmpty) {
-          // Save to local database history
           await ref.read(recentFilesControllerProvider.notifier).addOrUpdateFile(
                 name: fileInfo.name,
                 path: fileInfo.path,
@@ -92,21 +207,30 @@ class ExcelDataNotifier extends AsyncNotifier<TableDataState> {
                 sizeBytes: fileInfo.sizeBytes,
               );
 
-          return TableDataState(
-            rawData: parsedData,
-            processedData: parsedData,
+          final newTab = OpenFileTab(
+            id: fileInfo.path ?? '${fileInfo.name}_${DateTime.now().millisecondsSinceEpoch}',
+            fileName: fileInfo.name,
+            filePath: fileInfo.path,
+            tableState: TableDataState(
+              rawData: parsedData,
+              processedData: parsedData,
+            ),
+          );
+
+          final currentTabs = previousState != null ? List<OpenFileTab>.from(previousState.tabs) : <OpenFileTab>[];
+          currentTabs.add(newTab);
+
+          return MultiTabWorkspaceState(
+            tabs: currentTabs,
+            activeTabIndex: currentTabs.length - 1,
           );
         }
       }
-      return previousState ??
-          TableDataState(
-            rawData: ExcelParser.generateSampleData(),
-            processedData: ExcelParser.generateSampleData(),
-          );
+      return previousState ?? _createFallbackState();
     });
   }
 
-  /// Opens a file from raw bytes (used when selecting a record from recent file history).
+  /// Opens a file from raw bytes (used when selecting from recent files history).
   Future<void> loadBytes({
     required String name,
     required List<int> bytes,
@@ -115,6 +239,16 @@ class ExcelDataNotifier extends AsyncNotifier<TableDataState> {
     final previousState = state.value;
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(() async {
+      // Check if file is already open in an existing tab
+      if (previousState != null) {
+        final existingIdx = previousState.tabs.indexWhere(
+          (tab) => (path != null && tab.filePath == path) || tab.fileName == name,
+        );
+        if (existingIdx != -1) {
+          return previousState.copyWith(activeTabIndex: existingIdx);
+        }
+      }
+
       final parsedData = await compute(ExcelParser.parseBytes, bytes);
       if (parsedData.isNotEmpty) {
         await ref.read(recentFilesControllerProvider.notifier).addOrUpdateFile(
@@ -124,25 +258,40 @@ class ExcelDataNotifier extends AsyncNotifier<TableDataState> {
               sizeBytes: bytes.length,
             );
 
-        return TableDataState(
-          rawData: parsedData,
-          processedData: parsedData,
+        final newTab = OpenFileTab(
+          id: path ?? '${name}_${DateTime.now().millisecondsSinceEpoch}',
+          fileName: name,
+          filePath: path,
+          tableState: TableDataState(
+            rawData: parsedData,
+            processedData: parsedData,
+          ),
+        );
+
+        final currentTabs = previousState != null ? List<OpenFileTab>.from(previousState.tabs) : <OpenFileTab>[];
+        currentTabs.add(newTab);
+
+        return MultiTabWorkspaceState(
+          tabs: currentTabs,
+          activeTabIndex: currentTabs.length - 1,
         );
       }
-      return previousState ?? TableDataState(rawData: [], processedData: []);
+      return previousState ?? _createFallbackState();
     });
   }
 
-  /// Sort dataset by specific column index.
+  /// Sort dataset by specific column index for the active tab.
   void sortByColumn(int columnIndex) {
     final currentState = state.value;
-    if (currentState == null || currentState.rawData.length <= 1) return;
+    final activeTab = currentState?.activeTab;
+    if (currentState == null || activeTab == null || activeTab.tableState.rawData.length <= 1) return;
 
-    final isSameColumn = currentState.sortColumnIndex == columnIndex;
-    final newAscending = isSameColumn ? !currentState.sortAscending : true;
+    final tableState = activeTab.tableState;
+    final isSameColumn = tableState.sortColumnIndex == columnIndex;
+    final newAscending = isSameColumn ? !tableState.sortAscending : true;
 
-    final headers = currentState.rawData.first;
-    final dataRows = List<List<dynamic>>.from(currentState.rows);
+    final headers = tableState.rawData.first;
+    final dataRows = List<List<dynamic>>.from(tableState.rows);
 
     dataRows.sort((a, b) {
       final valA = columnIndex < a.length ? a[columnIndex] : '';
@@ -164,72 +313,113 @@ class ExcelDataNotifier extends AsyncNotifier<TableDataState> {
     });
 
     final newProcessed = [headers, ...dataRows];
-    state = AsyncValue.data(currentState.copyWith(
+    final updatedTableState = tableState.copyWith(
       processedData: newProcessed,
       sortColumnIndex: columnIndex,
       sortAscending: newAscending,
       currentPage: 0,
-    ));
+    );
+
+    _updateActiveTabState(currentState, updatedTableState);
   }
 
-  /// Filter rows matching search query across all cells.
+  /// Filter rows matching search query across all cells for the active tab.
   void setSearchQuery(String query) {
     final currentState = state.value;
-    if (currentState == null || currentState.rawData.isEmpty) return;
+    final activeTab = currentState?.activeTab;
+    if (currentState == null || activeTab == null || activeTab.tableState.rawData.isEmpty) return;
 
+    final tableState = activeTab.tableState;
     final trimmed = query.trim().toLowerCase();
     if (trimmed.isEmpty) {
-      state = AsyncValue.data(currentState.copyWith(
-        processedData: currentState.rawData,
-        searchQuery: '',
-        currentPage: 0,
-      ));
+      _updateActiveTabState(
+        currentState,
+        tableState.copyWith(
+          processedData: tableState.rawData,
+          searchQuery: '',
+          currentPage: 0,
+        ),
+      );
       return;
     }
 
-    final headers = currentState.rawData.first;
-    final allRows = currentState.rawData.skip(1).toList();
+    final headers = tableState.rawData.first;
+    final allRows = tableState.rawData.skip(1).toList();
 
     final filteredRows = allRows.where((row) {
       return row.any((cell) => cell.toString().toLowerCase().contains(trimmed));
     }).toList();
 
-    state = AsyncValue.data(currentState.copyWith(
-      processedData: [headers, ...filteredRows],
-      searchQuery: query,
-      currentPage: 0,
-    ));
+    _updateActiveTabState(
+      currentState,
+      tableState.copyWith(
+        processedData: [headers, ...filteredRows],
+        searchQuery: query,
+        currentPage: 0,
+      ),
+    );
   }
 
-  /// Navigate to target page.
+  /// Navigate to target page for the active tab.
   void setPage(int page) {
     final currentState = state.value;
-    if (currentState == null) return;
-    final validPage = page.clamp(0, currentState.totalPages - 1);
-    state = AsyncValue.data(currentState.copyWith(currentPage: validPage));
+    final activeTab = currentState?.activeTab;
+    if (currentState == null || activeTab == null) return;
+
+    final tableState = activeTab.tableState;
+    final validPage = page.clamp(0, tableState.totalPages - 1);
+    _updateActiveTabState(currentState, tableState.copyWith(currentPage: validPage));
   }
 
-  /// Change pagination page size.
+  /// Change pagination page size for the active tab.
   void setPageSize(int size) {
     final currentState = state.value;
-    if (currentState == null) return;
-    state = AsyncValue.data(currentState.copyWith(
-      pageSize: size,
-      currentPage: 0,
-    ));
+    final activeTab = currentState?.activeTab;
+    if (currentState == null || activeTab == null) return;
+
+    final tableState = activeTab.tableState;
+    _updateActiveTabState(currentState, tableState.copyWith(pageSize: size, currentPage: 0));
   }
 
   /// Reload sample demo data.
   void loadSampleData() {
     final sample = ExcelParser.generateSampleData();
-    state = AsyncValue.data(TableDataState(
-      rawData: sample,
-      processedData: sample,
+    final defaultTab = OpenFileTab(
+      id: 'sample_${DateTime.now().millisecondsSinceEpoch}',
+      fileName: 'Sample Dataset.xlsx',
+      tableState: TableDataState(
+        rawData: sample,
+        processedData: sample,
+      ),
+    );
+
+    state = AsyncValue.data(MultiTabWorkspaceState(
+      tabs: [defaultTab],
+      activeTabIndex: 0,
     ));
+  }
+
+  void _updateActiveTabState(MultiTabWorkspaceState currentState, TableDataState newTableState) {
+    final newTabs = List<OpenFileTab>.from(currentState.tabs);
+    final activeIdx = currentState.activeTabIndex;
+    if (activeIdx >= 0 && activeIdx < newTabs.length) {
+      newTabs[activeIdx] = newTabs[activeIdx].copyWith(tableState: newTableState);
+      state = AsyncValue.data(currentState.copyWith(tabs: newTabs));
+    }
+  }
+
+  MultiTabWorkspaceState _createFallbackState() {
+    final sample = ExcelParser.generateSampleData();
+    final defaultTab = OpenFileTab(
+      id: 'sample_default',
+      fileName: 'Sample Dataset.xlsx',
+      tableState: TableDataState(rawData: sample, processedData: sample),
+    );
+    return MultiTabWorkspaceState(tabs: [defaultTab], activeTabIndex: 0);
   }
 }
 
 final excelDataControllerProvider =
-    AsyncNotifierProvider<ExcelDataNotifier, TableDataState>(() {
+    AsyncNotifierProvider<ExcelDataNotifier, MultiTabWorkspaceState>(() {
   return ExcelDataNotifier();
 });

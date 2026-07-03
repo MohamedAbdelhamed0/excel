@@ -4,14 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../controllers/excel_data_controller.dart';
 
-/// High-performance virtualized spreadsheet data grid with unified header/body scrolling,
-/// cell selection, right-click context menu, and clipboard copy capabilities.
+/// High-performance virtualized spreadsheet data grid with multi-tab file switching,
+/// unified header/body scrolling, cell selection, right-click context menu, and clipboard copy.
 class DataTableView extends ConsumerStatefulWidget {
-  final TableDataState tableState;
+  final MultiTabWorkspaceState workspaceState;
 
   const DataTableView({
     super.key,
-    required this.tableState,
+    required this.workspaceState,
   });
 
   @override
@@ -64,7 +64,6 @@ class _DataTableViewState extends ConsumerState<DataTableView> {
 
     if (_selectedCellKeys.isEmpty) return;
 
-    // Parse selected cell keys into sorted coordinates (row, col)
     final sortedCoords = _selectedCellKeys.map((key) {
       final parts = key.split('_');
       return MapEntry(int.parse(parts[0]), int.parse(parts[1]));
@@ -75,7 +74,7 @@ class _DataTableViewState extends ConsumerState<DataTableView> {
         return a.value.compareTo(b.value);
       });
 
-    final headers = widget.tableState.headers;
+    final headers = widget.workspaceState.activeTableState.headers;
     final extractedValues = <String>[];
     for (final coord in sortedCoords) {
       final r = coord.key;
@@ -225,7 +224,8 @@ class _DataTableViewState extends ConsumerState<DataTableView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tableState = widget.tableState;
+    final workspaceState = widget.workspaceState;
+    final tableState = workspaceState.activeTableState;
 
     if (tableState.rawData.isEmpty) {
       return Center(
@@ -235,12 +235,12 @@ class _DataTableViewState extends ConsumerState<DataTableView> {
             Icon(Icons.table_chart_outlined, size: 64, color: theme.hintColor),
             const SizedBox(height: 16),
             const Text(
-              'No Spreadsheet Data',
+              'No Spreadsheet Open',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
-              'Click Open File to load a CSV or Excel file',
+              'Click Open File or Recent Files to load data into a workspace tab',
               style: TextStyle(color: theme.hintColor),
             ),
           ],
@@ -253,6 +253,105 @@ class _DataTableViewState extends ConsumerState<DataTableView> {
 
     return Column(
       children: [
+        // Multi-File Tab Bar
+        if (workspaceState.tabs.isNotEmpty) ...[
+          Container(
+            height: 38,
+            margin: const EdgeInsets.only(bottom: 10),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ...List.generate(workspaceState.tabs.length, (index) {
+                    final tab = workspaceState.tabs[index];
+                    final isActive = index == workspaceState.activeTabIndex;
+                    final isExcel = tab.fileName.endsWith('.xlsx') || tab.fileName.endsWith('.xls');
+
+                    return Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      child: InkWell(
+                        onTap: () {
+                          ref.read(excelDataControllerProvider.notifier).setActiveTab(index);
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isActive
+                                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.6)
+                                : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isActive
+                                  ? theme.colorScheme.primary
+                                  : theme.dividerColor.withValues(alpha: 0.2),
+                              width: isActive ? 1.5 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isExcel ? Icons.table_chart : Icons.description,
+                                size: 16,
+                                color: isActive
+                                    ? theme.colorScheme.primary
+                                    : (isExcel ? Colors.green : Colors.blue),
+                              ),
+                              const SizedBox(width: 8),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 160),
+                                child: Text(
+                                  tab.fileName,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                                    color: isActive
+                                        ? theme.colorScheme.onSurface
+                                        : theme.hintColor,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              InkWell(
+                                onTap: () {
+                                  ref.read(excelDataControllerProvider.notifier).closeTab(index);
+                                },
+                                borderRadius: BorderRadius.circular(10),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2.0),
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 14,
+                                    color: isActive
+                                        ? theme.colorScheme.onSurface
+                                        : theme.hintColor,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                  // Add File Tab Button
+                  IconButton(
+                    icon: const Icon(Icons.add_circle_outline, size: 20),
+                    tooltip: 'Open New File Tab',
+                    onPressed: () {
+                      ref.read(excelDataControllerProvider.notifier).pickAndLoadFile();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
         // Top Filter, Search Bar & Selection Actions
         Padding(
           padding: const EdgeInsets.only(bottom: 12.0),

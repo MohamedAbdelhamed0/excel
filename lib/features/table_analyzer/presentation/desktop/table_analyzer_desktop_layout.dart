@@ -149,13 +149,13 @@ class TableAnalyzerDesktopLayout extends ConsumerWidget {
                             // Main Data Grid View (Left Split)
                             Expanded(
                               flex: 3,
-                              child: DataTableView(tableState: state),
+                              child: DataTableView(workspaceState: state),
                             ),
                             const SizedBox(width: 16),
                             // AI Analysis Panel (Right Split - Fixed Width)
                             SizedBox(
                               width: 380,
-                              child: AiAnalysisPanel(tableState: state),
+                              child: AiAnalysisPanel(tableState: state.activeTableState),
                             ),
                           ],
                         );
