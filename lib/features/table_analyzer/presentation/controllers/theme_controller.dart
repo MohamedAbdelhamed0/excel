@@ -1,26 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/theme/app_theme.dart';
 
-/// Riverpod Notifier for toggling ThemeMode (Light, Dark, System).
-class ThemeNotifier extends Notifier<ThemeMode> {
-  @override
-  ThemeMode build() {
-    return ThemeMode.system;
-  }
+/// State holding ThemeMode and AppColorPalette preferences.
+class ThemeState {
+  final ThemeMode mode;
+  final AppColorPalette palette;
 
-  void toggleTheme() {
-    if (state == ThemeMode.dark) {
-      state = ThemeMode.light;
-    } else {
-      state = ThemeMode.dark;
-    }
-  }
+  const ThemeState({
+    this.mode = ThemeMode.system,
+    this.palette = AppColorPalette.blue,
+  });
 
-  void setThemeMode(ThemeMode mode) {
-    state = mode;
+  ThemeState copyWith({
+    ThemeMode? mode,
+    AppColorPalette? palette,
+  }) {
+    return ThemeState(
+      mode: mode ?? this.mode,
+      palette: palette ?? this.palette,
+    );
   }
 }
 
-final themeProvider = NotifierProvider<ThemeNotifier, ThemeMode>(() {
+/// Riverpod Notifier for managing app appearance (ThemeMode & Color Palette).
+class ThemeNotifier extends Notifier<ThemeState> {
+  @override
+  ThemeState build() {
+    return const ThemeState();
+  }
+
+  void toggleTheme() {
+    final nextMode = state.mode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    state = state.copyWith(mode: nextMode);
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    state = state.copyWith(mode: mode);
+  }
+
+  void setColorPalette(AppColorPalette palette) {
+    state = state.copyWith(palette: palette);
+  }
+}
+
+final themeProvider = NotifierProvider<ThemeNotifier, ThemeState>(() {
   return ThemeNotifier();
 });

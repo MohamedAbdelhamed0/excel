@@ -40,7 +40,7 @@ class TableAnalyzerMobileLayout extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncData = ref.watch(excelDataControllerProvider);
     final platformFactory = ref.watch(platformFactoryProvider);
-    final currentTheme = ref.watch(themeProvider);
+    final themeState = ref.watch(themeProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -60,7 +60,7 @@ class TableAnalyzerMobileLayout extends ConsumerWidget {
         actions: [
           IconButton(
             icon: Icon(
-              currentTheme == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
+              themeState.mode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
             ),
             tooltip: 'Toggle Theme',
             onPressed: () {

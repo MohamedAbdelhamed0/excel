@@ -47,14 +47,14 @@ class ExcelAiApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeMode = ref.watch(themeProvider);
+    final themeState = ref.watch(themeProvider);
 
     return MaterialApp.router(
       title: 'Excel & CSV AI Analyzer',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: themeMode,
+      theme: AppTheme.getLightTheme(themeState.palette),
+      darkTheme: AppTheme.getDarkTheme(themeState.palette),
+      themeMode: themeState.mode,
       routerConfig: appRouter,
     );
   }

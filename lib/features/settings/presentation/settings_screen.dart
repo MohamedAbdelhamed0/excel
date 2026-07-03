@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/DI/platform_providers.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../table_analyzer/presentation/controllers/theme_controller.dart';
 
-/// App Settings Screen providing theme preferences, platform information, and configuration controls.
+/// App Settings Screen providing theme mode, color palette preferences, and platform information.
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final currentTheme = ref.watch(themeProvider);
+    final themeState = ref.watch(themeProvider);
     final platformFactory = ref.watch(platformFactoryProvider);
     final theme = Theme.of(context);
 
@@ -25,8 +26,9 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
+          // Theme Mode Section
           Text(
-            'Appearance',
+            'Appearance Mode',
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
               color: theme.colorScheme.primary,
@@ -35,7 +37,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
           Card(
             child: RadioGroup<ThemeMode>(
-              groupValue: currentTheme,
+              groupValue: themeState.mode,
               onChanged: (mode) {
                 if (mode != null) {
                   ref.read(themeProvider.notifier).setThemeMode(mode);
@@ -59,7 +61,59 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
           ),
+          const SizedBox(height: 20),
+
+          // Color Palette Section
+          Text(
+            'Color Palette',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Select a primary accent palette for the workspace UI:',
+                    style: TextStyle(fontSize: 12, color: theme.hintColor),
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: AppColorPalette.values.map((palette) {
+                      final isSelected = themeState.palette == palette;
+                      return ChoiceChip(
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          if (selected) {
+                            ref.read(themeProvider.notifier).setColorPalette(palette);
+                          }
+                        },
+                        avatar: CircleAvatar(
+                          backgroundColor: palette.primaryColor,
+                          radius: 8,
+                        ),
+                        label: Text(palette.label),
+                        selectedColor: palette.primaryColor.withValues(alpha: 0.2),
+                        side: isSelected
+                            ? BorderSide(color: palette.primaryColor, width: 1.5)
+                            : null,
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 24),
+
+          // Platform & DI Information Section
           Text(
             'Platform & Dependency Injection',
             style: theme.textTheme.titleMedium?.copyWith(

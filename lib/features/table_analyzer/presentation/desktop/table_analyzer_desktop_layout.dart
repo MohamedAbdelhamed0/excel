@@ -14,8 +14,8 @@ class TableAnalyzerDesktopLayout extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncData = ref.watch(excelDataControllerProvider);
+    final themeState = ref.watch(themeProvider);
     final platformFactory = ref.watch(platformFactoryProvider);
-    final currentTheme = ref.watch(themeProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -109,7 +109,7 @@ class TableAnalyzerDesktopLayout extends ConsumerWidget {
                         const SizedBox(width: 12),
                         IconButton(
                           icon: Icon(
-                            currentTheme == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
+                            themeState.mode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
                           ),
                           tooltip: 'Toggle Light/Dark Theme',
                           onPressed: () {
