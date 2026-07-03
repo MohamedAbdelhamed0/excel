@@ -3,9 +3,27 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
+/// Data structure containing picked file metadata and raw content bytes.
+class PickedFileInfo {
+  final String name;
+  final String? path;
+  final List<int> bytes;
+  final int sizeBytes;
+
+  PickedFileInfo({
+    required this.name,
+    this.path,
+    required this.bytes,
+    required this.sizeBytes,
+  });
+}
+
 /// Abstract service interface for picking Excel/CSV files across platforms.
 abstract class IFilePickerService {
-  /// Prompt the user to select a file and return its raw byte contents.
+  /// Prompt user to select a file and return [PickedFileInfo].
+  Future<PickedFileInfo?> pickFileDetails({List<String>? allowedExtensions});
+
+  /// Backward-compatible method returning bytes.
   Future<List<int>?> pickFile({List<String>? allowedExtensions});
 
   /// Name or description of the picker strategy.
@@ -31,7 +49,7 @@ abstract class PlatformServiceFactory {
 }
 
 // Helper method to execute real file picking across platforms
-Future<List<int>?> _pickFileFromOS({List<String>? allowedExtensions}) async {
+Future<PickedFileInfo?> _pickFileInfoFromOS({List<String>? allowedExtensions}) async {
   try {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -41,18 +59,22 @@ Future<List<int>?> _pickFileFromOS({List<String>? allowedExtensions}) async {
 
     if (result != null && result.files.isNotEmpty) {
       final file = result.files.first;
+      List<int>? bytes = file.bytes;
 
-      // In web or withData=true environments
-      if (file.bytes != null && file.bytes!.isNotEmpty) {
-        return file.bytes!;
-      }
-
-      // In native desktop/mobile environments where file path is available
-      if (!kIsWeb && file.path != null && file.path!.isNotEmpty) {
+      if ((bytes == null || bytes.isEmpty) && !kIsWeb && file.path != null && file.path!.isNotEmpty) {
         final localFile = File(file.path!);
         if (await localFile.exists()) {
-          return await localFile.readAsBytes();
+          bytes = await localFile.readAsBytes();
         }
+      }
+
+      if (bytes != null && bytes.isNotEmpty) {
+        return PickedFileInfo(
+          name: file.name,
+          path: file.path,
+          bytes: bytes,
+          sizeBytes: file.size,
+        );
       }
     }
   } catch (e) {
@@ -70,9 +92,15 @@ class DesktopFilePickerService implements IFilePickerService {
   String get pickerName => 'Desktop Native File Dialog (FilePicker)';
 
   @override
-  Future<List<int>?> pickFile({List<String>? allowedExtensions}) async {
+  Future<PickedFileInfo?> pickFileDetails({List<String>? allowedExtensions}) async {
     debugPrint('[DesktopFilePicker] Opening native desktop file dialog...');
-    return await _pickFileFromOS(allowedExtensions: allowedExtensions);
+    return await _pickFileInfoFromOS(allowedExtensions: allowedExtensions);
+  }
+
+  @override
+  Future<List<int>?> pickFile({List<String>? allowedExtensions}) async {
+    final info = await pickFileDetails(allowedExtensions: allowedExtensions);
+    return info?.bytes;
   }
 }
 
@@ -106,9 +134,15 @@ class MobileFilePickerService implements IFilePickerService {
   String get pickerName => 'Mobile Document Picker (FilePicker)';
 
   @override
-  Future<List<int>?> pickFile({List<String>? allowedExtensions}) async {
+  Future<PickedFileInfo?> pickFileDetails({List<String>? allowedExtensions}) async {
     debugPrint('[MobileFilePicker] Opening mobile document picker...');
-    return await _pickFileFromOS(allowedExtensions: allowedExtensions);
+    return await _pickFileInfoFromOS(allowedExtensions: allowedExtensions);
+  }
+
+  @override
+  Future<List<int>?> pickFile({List<String>? allowedExtensions}) async {
+    final info = await pickFileDetails(allowedExtensions: allowedExtensions);
+    return info?.bytes;
   }
 }
 
@@ -142,9 +176,15 @@ class WebFallbackFilePickerService implements IFilePickerService {
   String get pickerName => 'Web / Browser File Input (FilePicker)';
 
   @override
-  Future<List<int>?> pickFile({List<String>? allowedExtensions}) async {
+  Future<PickedFileInfo?> pickFileDetails({List<String>? allowedExtensions}) async {
     debugPrint('[WebFallbackFilePicker] Opening browser file input...');
-    return await _pickFileFromOS(allowedExtensions: allowedExtensions);
+    return await _pickFileInfoFromOS(allowedExtensions: allowedExtensions);
+  }
+
+  @override
+  Future<List<int>?> pickFile({List<String>? allowedExtensions}) async {
+    final info = await pickFileDetails(allowedExtensions: allowedExtensions);
+    return info?.bytes;
   }
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/DI/platform_providers.dart';
+import '../../../recent_files/presentation/recent_files_dialog.dart';
 import '../controllers/excel_data_controller.dart';
 import '../controllers/theme_controller.dart';
 import '../widgets/ai_analysis_panel.dart';
@@ -47,6 +48,11 @@ class TableAnalyzerDesktopLayout extends ConsumerWidget {
                 label: Text('Analyzer'),
               ),
               NavigationRailDestination(
+                icon: Icon(Icons.history_outlined),
+                selectedIcon: Icon(Icons.history),
+                label: Text('Recent Files'),
+              ),
+              NavigationRailDestination(
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
                 label: Text('Settings'),
@@ -54,6 +60,8 @@ class TableAnalyzerDesktopLayout extends ConsumerWidget {
             ],
             onDestinationSelected: (index) {
               if (index == 1) {
+                RecentFilesDialog.show(context);
+              } else if (index == 2) {
                 context.push('/settings');
               }
             },
@@ -97,6 +105,14 @@ class TableAnalyzerDesktopLayout extends ConsumerWidget {
                           },
                           icon: const Icon(Icons.file_open),
                           label: const Text('Open File (Ctrl+O)'),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            RecentFilesDialog.show(context);
+                          },
+                          icon: const Icon(Icons.history),
+                          label: const Text('Recent Files'),
                         ),
                         const SizedBox(width: 8),
                         OutlinedButton.icon(

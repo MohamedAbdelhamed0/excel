@@ -43,6 +43,8 @@ dependencies:
   csv: ^6.0.0
   excel: ^4.0.3
   file_picker: ^8.0.0
+  shared_preferences: ^2.2.3
+
 
 
 

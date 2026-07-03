@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/DI/platform_providers.dart';
 import '../../../../core/utils/excel_parser.dart';
+import '../../../recent_files/presentation/controllers/recent_files_controller.dart';
 
 /// State object representing table data, current sorting, search query, and pagination.
 class TableDataState {
@@ -69,7 +70,7 @@ class ExcelDataNotifier extends AsyncNotifier<TableDataState> {
     );
   }
 
-  /// Offloads parsing to a background isolate using [compute] to keep UI 60fps smooth.
+  /// Prompts file picker, offloads parsing to a background isolate, and saves to the local database.
   Future<void> pickAndLoadFile() async {
     final previousState = state.value;
     state = const AsyncValue.loading();
@@ -77,12 +78,20 @@ class ExcelDataNotifier extends AsyncNotifier<TableDataState> {
       final factory = ref.read(platformFactoryProvider);
       final picker = factory.getFilePicker();
 
-      final bytes = await picker.pickFile(allowedExtensions: ['csv', 'xlsx', 'xls']);
+      final fileInfo = await picker.pickFileDetails(allowedExtensions: ['csv', 'xlsx', 'xls']);
 
-      if (bytes != null && bytes.isNotEmpty) {
-        // Run parsing in a background isolate using compute
-        final parsedData = await compute(ExcelParser.parseBytes, bytes);
+      if (fileInfo != null && fileInfo.bytes.isNotEmpty) {
+        // Parse in a background isolate using compute
+        final parsedData = await compute(ExcelParser.parseBytes, fileInfo.bytes);
         if (parsedData.isNotEmpty) {
+          // Save to local database history
+          await ref.read(recentFilesControllerProvider.notifier).addOrUpdateFile(
+                name: fileInfo.name,
+                path: fileInfo.path,
+                bytes: fileInfo.bytes,
+                sizeBytes: fileInfo.sizeBytes,
+              );
+
           return TableDataState(
             rawData: parsedData,
             processedData: parsedData,
@@ -94,6 +103,33 @@ class ExcelDataNotifier extends AsyncNotifier<TableDataState> {
             rawData: ExcelParser.generateSampleData(),
             processedData: ExcelParser.generateSampleData(),
           );
+    });
+  }
+
+  /// Opens a file from raw bytes (used when selecting a record from recent file history).
+  Future<void> loadBytes({
+    required String name,
+    required List<int> bytes,
+    String? path,
+  }) async {
+    final previousState = state.value;
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      final parsedData = await compute(ExcelParser.parseBytes, bytes);
+      if (parsedData.isNotEmpty) {
+        await ref.read(recentFilesControllerProvider.notifier).addOrUpdateFile(
+              name: name,
+              path: path,
+              bytes: bytes,
+              sizeBytes: bytes.length,
+            );
+
+        return TableDataState(
+          rawData: parsedData,
+          processedData: parsedData,
+        );
+      }
+      return previousState ?? TableDataState(rawData: [], processedData: []);
     });
   }
 

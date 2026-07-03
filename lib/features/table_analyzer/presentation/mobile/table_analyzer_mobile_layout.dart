@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/DI/platform_providers.dart';
+import '../../../recent_files/presentation/recent_files_dialog.dart';
 import '../controllers/excel_data_controller.dart';
 import '../controllers/theme_controller.dart';
 import '../widgets/ai_analysis_panel.dart';
@@ -58,6 +59,13 @@ class TableAnalyzerMobileLayout extends ConsumerWidget {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Recent Files',
+            onPressed: () {
+              RecentFilesDialog.showBottomSheet(context);
+            },
+          ),
           IconButton(
             icon: Icon(
               themeState.mode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
@@ -117,6 +125,15 @@ class TableAnalyzerMobileLayout extends ConsumerWidget {
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          FloatingActionButton.small(
+            heroTag: 'history_fab',
+            onPressed: () {
+              RecentFilesDialog.showBottomSheet(context);
+            },
+            tooltip: 'Recent Files',
+            child: const Icon(Icons.history),
+          ),
+          const SizedBox(height: 8),
           FloatingActionButton.small(
             heroTag: 'ai_sheet_fab',
             onPressed: () {
